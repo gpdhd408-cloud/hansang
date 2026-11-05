@@ -4419,9 +4419,10 @@ async function sitDown() {
   const d = state.draft;
   const me = addPerson({ name: d.name, top: d.top, gender: d.gender, menu: d.menu, seat: 0, isMe: true, photoImg: d.photoImg, dishSpec: d.dishSpec });
   state.me = me; $("#meName").textContent = me.name; me.root.position.set(3.4, 0, 6.6); me.root.rotation.y = Math.PI; me.entering = true; me.homeSeat = 0;
+  if (NET.ready) netClaimSeat();   // 걸어 들어가기 전에 자리를 먼저 알려서 상대 화면에도 바로 함께 들어오게
   look.intro = false; look.yaw = 0.35; look.pitch = -0.25; camera.position.set(3.6, 1.8, 7.8);
   await walkPath(me, [DOOR_IN.clone(), seatPos(0, 1.65), seatPos(0)], 1.1);
-  sitAt(me, 0); me.entering = false; lookAtTable(); netClaimSeat();
+  sitAt(me, 0); me.entering = false; lookAtTable(); NET.last = ''; netTrack(true);
   $('#dragHint').classList.remove('hidden'); setTimeout(() => ($('#dragHint').style.opacity = 0), 5000);
   toast(`${MENUS[d.menu].word}… 자리에 앉았어요`);
   setTimeout(() => runAction(me, MENUS[me.menu].eat), 1200);
@@ -4704,7 +4705,7 @@ function frame() {
   (W.fanBlades || []).forEach((f, i) => { if (!W.fans[i].visible) return; f.blades.rotation.z -= dt * 18; f.head.rotation.y = Math.sin(t * 0.4 + i) * 0.7; });
   (W.lanterns || []).forEach((l, i) => { l.rotation.z = Math.sin(t * 1.3 + i) * 0.06 * wind; l.rotation.x = Math.cos(t * 1.1 + i) * 0.04 * wind; });
   if (W.cat) { W.cat.body.scale.y = 1 + Math.sin(t * 1.6) * 0.04; W.cat.tail.rotation.y = Math.sin(t * 0.8) * 0.3; }
-  updateTank(dt, t); updateDoor(dt); updateBuddy(dt, t); updateMeSwim(dt); updateShades(); if (NET.ready) { if (state.me && !state.me.entering && state.me.seated && NET.myG === null) netClaimSeat(); netTrack(); if (state.me && !state.me.entering && NET.myG !== null && (W.netT = (W.netT || 0) + dt) > 2) { W.netT = 0; placeRemotes(); } } updateSnowballs(dt); updateSnowFight(); updateKite(dt, t); { const can = chatMates().length > 0 && !look.intro, app = $('#app'); if (app.classList.contains('chatting') && !can) toggleChat(false); const fab = can && !app.classList.contains('chatting'); if ($('#chatFab').classList.contains('hidden') === fab || app.classList.contains('has-chat') !== can) { $('#chatFab').classList.toggle('hidden', !fab); app.classList.toggle('has-chat', can); dockFade(); placeAboveDock(); } } separatePeople();
+  updateTank(dt, t); updateDoor(dt); updateBuddy(dt, t); updateMeSwim(dt); updateShades(); if (NET.ready) { if (state.me && (state.me.entering || state.me.seated) && NET.myG === null) netClaimSeat(); netTrack(); if (state.me && NET.myG !== null && (W.netT = (W.netT || 0) + dt) > 2) { W.netT = 0; placeRemotes(); } } updateSnowballs(dt); updateSnowFight(); updateKite(dt, t); { const can = chatMates().length > 0 && !look.intro, app = $('#app'); if (app.classList.contains('chatting') && !can) toggleChat(false); const fab = can && !app.classList.contains('chatting'); if ($('#chatFab').classList.contains('hidden') === fab || app.classList.contains('has-chat') !== can) { $('#chatFab').classList.toggle('hidden', !fab); app.classList.toggle('has-chat', can); dockFade(); placeAboveDock(); } } separatePeople();
   (W.ballRings || []).forEach((r, i) => { const k = 1 + Math.sin(t * 5 + i) * 0.12; r.scale.set(k, k, 1); r.material.opacity = 0.6 + Math.sin(t * 5 + i) * 0.3; });
   (W.pickRings || []).forEach((r, i) => { const k = 1 + Math.sin(t * 5 + i) * 0.12; r.scale.set(k, k, 1); r.material.opacity = 0.6 + Math.sin(t * 5 + i) * 0.3; });
 
@@ -4757,11 +4758,11 @@ function netConnect(table = 1) {
   } catch (e) { netStatus('bad', '실시간 연결 실패: ' + e.message); return false; }
 }
 function myMeta() {
-  const me = state.me; if (!me || me.entering || !me.seated || NET.myG === null) return { id: NET.id, seated: false, joinedAt: NET.joinedAt };
-  return { id: NET.id, seated: true, g: toGlobal(me.seat), joinedAt: NET.joinedAt, name: me.name, gender: me.gender || state.draft.gender, top: state.draft.top, menu: String(me.menu).startsWith('custom') ? 'custom' : me.menu,
+  const me = state.me; if (!me || !(me.seated || me.entering) || NET.myG === null) return { id: NET.id, seated: false, joinedAt: NET.joinedAt };
+  return { id: NET.id, seated: true, entering: !!me.entering, g: toGlobal(me.entering ? (me.homeSeat || 0) : me.seat), joinedAt: NET.joinedAt, name: me.name, gender: me.gender || state.draft.gender, top: state.draft.top, menu: String(me.menu).startsWith('custom') ? 'custom' : me.menu,
     custom: String(me.menu).startsWith('custom') ? { spec: me.dishSpec, menu: MENUS[me.menu] } : null };
 }
-function netTrack(force) { if (!NET.ch || !NET.ready) return; const m = myMeta(), key = JSON.stringify([m.seated, m.g, m.menu]); if (!force && key === NET.last) return; NET.last = key; try { NET.ch.track(m); } catch (e) {} }
+function netTrack(force) { if (!NET.ch || !NET.ready) return; const m = myMeta(), key = JSON.stringify([m.seated, m.g, m.menu, m.entering]); if (!force && key === NET.last) return; NET.last = key; try { NET.ch.track(m); } catch (e) {} }
 // 내가 처음 앉을 때 전체 자리 번호를 고른다 (진짜 사람이 없는 가장 앞 번호)
 function netClaimSeat() {
   if (!NET.ch) return; const taken = new Set([...NET.remotes.values()].filter((r) => r.meta.seated).map((r) => r.meta.g));
@@ -4780,7 +4781,7 @@ function onPresence(st) {
 }
 function updateOnline() { const n = [...NET.remotes.values()].filter((r) => r.meta.seated).length, el = $('#onlineCnt'); if (!el) return; el.classList.toggle('hidden', !n || !state.me); el.textContent = `함께 ${n + 1}명`; }
 function placeRemotes() {
-  if (!state.me || state.me.entering || NET.myG === null) return;
+  if (!state.me || NET.myG === null) return;
   NET.reserved = new Set([...NET.remotes.values()].filter((r) => r.meta.seated).map((r) => toLocal(r.meta.g)));
   NET.remotes.forEach((r) => {
     const want = r.meta.seated ? toLocal(r.meta.g) : null;
@@ -4790,22 +4791,28 @@ function placeRemotes() {
   });
 }
 function remoteMenuKey(r) { const m = r.meta; if (m.menu !== 'custom' || !m.custom) return MENUS[m.menu] ? m.menu : 'ramen'; const k = 'custom_' + r.id; MENUS[k] = Object.assign({}, CUSTOM_MENU, m.custom.menu || {}); return k; }
+// 가짜 손님이 바로 일어나 자리를 비켜 준다 (기다리지 않게)
+function npcVacate(p) {
+  if (p.leaving) return; p.leaving = true; cancelAction(p); p.busy = true; p.seated = false; p.standing = true; if (p.stopLoop) { p.stopLoop(); p.stopLoop = null; }
+  showBubble(p, '🙂 여기 앉으세요'); clearTable(p);
+  const pts = avoidTables(p.root.position.clone(), route(p.root.position.clone(), DOOR_IN.clone())); pts.push(DOOR_OUT.clone(), new THREE.Vector3(BW.x - 0.25, 0, BW.z1 - 0.3));
+  walkPath(p, pts, 1.6).then(() => { scene.remove(p.root); const k = state.people.indexOf(p); if (k >= 0) state.people.splice(k, 1); });
+}
 async function remoteArrive(r, i) {
   r.arriving = true;
-  // 그 자리에 가짜 손님이 있으면 먼저 비켜 준다
-  const npc = state.people.find((q) => q.seat === i && !q.isMe && !q.remote);
-  if (npc && !npc.leaving) guestLeave(npc);
-  for (let k = 0; k < 40 && state.people.some((q) => q.seat === i && !q.isMe && !q.remote && q.seated); k++) await sleep(300);
-  if (!NET.remotes.has(r.id) || !r.meta.seated) { r.arriving = false; return; }
+  state.people.filter((q) => q.seat === i && !q.isMe && !q.remote && !q.leaving).forEach(npcVacate);
   const m = r.meta, menu = remoteMenuKey(r);
   const p = addPerson({ name: String(m.name || '손님').slice(0, 10), top: m.top || '#3d4a63', gender: m.gender === 'f' ? 'f' : 'm', menu, seat: i, remote: r.id, dishSpec: m.custom ? m.custom.spec : null });
-  r.p = p; p.root.position.set(BW.x + 0.25, bwY(BW.z1 - 0.3), BW.z1 - 0.3); p.root.rotation.y = Math.PI;
-  const tgt = toLocal(r.meta.g);
-  const pts = [DOOR_OUT.clone(), DOOR_IN.clone()].concat(avoidTables(DOOR_IN.clone(), route(DOOR_IN.clone(), seatPos(tgt, 1.65)))); pts.push(seatPos(tgt));
-  await walkPath(p, pts); r.arriving = false;
+  r.p = p;
+  if (m.entering) {   // 상대도 지금 막 들어오는 중이면 가게 안 문에서 같이 걸어 들어온다
+    p.root.position.copy(DOOR_IN); p.root.rotation.y = Math.PI;
+    const pts = avoidTables(DOOR_IN.clone(), route(DOOR_IN.clone(), seatPos(i, 1.65))); pts.push(seatPos(i));
+    await walkPath(p, pts, 1.6);
+  }
+  r.arriving = false;
   if (!NET.remotes.has(r.id)) return;
   sitAt(p, toLocal(r.meta.g)); lifeLoop(p);
-  toast(`${p.name}님이 같은 식탁에 앉았어요 🟢`); setTimeout(() => showBubble(p, '👋 안녕하세요'), 800);
+  toast(`${p.name}님이 같은 식탁에 앉았어요 🟢`); setTimeout(() => showBubble(p, '👋 안녕하세요'), 600);
 }
 async function remoteAway(r) { const p = r.p; r.p = null; if (!p) return; p.remote = null; await guestLeave(p); }
 function remoteGone(id, silent) { const r = NET.remotes.get(id); NET.remotes.delete(id); if (r && r.p) { const p = r.p; r.p = null; if (!silent) guestLeave(p); else { scene.remove(p.root); clearTable(p); const i = state.people.indexOf(p); if (i >= 0) state.people.splice(i, 1); } } updateOnline(); }
