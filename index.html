@@ -396,9 +396,12 @@ function computeScene() {
    ========================================================= */
 const canvas = $('#view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
-const PERF = { pr: Math.min(1.5, devicePixelRatio || 1), acc: 0, n: 0, low: 0, stage: 0 };
-// 큰 화면(PC)은 픽셀 수가 많아 느려지기 쉬워, 화면 크기에 맞춰 해상도를 먼저 낮춰 둔다
-{ const px = innerWidth * innerHeight; if (px > 1.6e6) PERF.pr = Math.min(PERF.pr, 1); else if (px > 0.9e6) PERF.pr = Math.min(PERF.pr, 1.25); }
+const PERF = (() => {
+  const dpr = devicePixelRatio || 1, mobile = matchMedia('(pointer: coarse)').matches || innerWidth < 820;
+  let pr = mobile ? Math.min(1.75, dpr) : Math.min(1.5, dpr); const px = innerWidth * innerHeight;
+  if (!mobile) { if (px > 1.6e6) pr = Math.min(pr, 1); else if (px > 0.9e6) pr = Math.min(pr, 1.25); }   // 큰 PC 화면은 픽셀이 많아 해상도를 먼저 낮춰 둔다
+  return { pr, start: pr, floor: mobile ? Math.min(pr, 1.5) : 0.8, mobile, slow: mobile ? 24 : 40, acc: 0, n: 0, low: 0, good: 0, shadowsCut: false };
+})();
 renderer.setPixelRatio(PERF.pr);
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -4723,12 +4726,13 @@ const clock = new THREE.Clock();
 function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w / h < 0.8 ? 72 : 58; camera.updateProjectionMatrix(); }
 function frame() {
   const dt = Math.min(0.1, clock.getDelta()), t = clock.elapsedTime; lastDt = dt;
-  // 느리면 스스로 화질을 낮춘다: 해상도 → 그림자 → 더 낮은 해상도
+  // 느리면 스스로 화질을 낮춘다: 그림자 먼저, 그다음 해상도(휴대폰은 선명함을 지키도록 1.5배 아래로는 안 내린다). 다시 빨라지면 되돌린다
   PERF.acc += dt; PERF.n++; if (PERF.acc > 2.5) { const fps = PERF.n / PERF.acc; PERF.acc = 0; PERF.n = 0;
-    if (fps < 40 && !document.hidden) { PERF.low++; if (PERF.low >= 2) { PERF.low = 0; PERF.stage++;
-      if (PERF.stage === 1 && PERF.pr > 1) { PERF.pr = 1; renderer.setPixelRatio(1); resize(); }
-      else if (PERF.stage <= 2) { renderer.shadowMap.type = THREE.PCFShadowMap; W.sun.shadow.mapSize.set(1024, 1024); if (W.sun.shadow.map) { W.sun.shadow.map.dispose(); W.sun.shadow.map = null; } scene.traverse((o) => { if (o.material && o.material.needsUpdate !== undefined) o.material.needsUpdate = true; }); }
-      else if (PERF.stage === 3) { PERF.pr = 0.8; renderer.setPixelRatio(0.8); resize(); } } } else PERF.low = 0; }
+    if (document.hidden) {}
+    else if (fps < PERF.slow) { PERF.good = 0; if (++PERF.low >= 2) { PERF.low = 0;
+      if (!PERF.shadowsCut) { PERF.shadowsCut = true; renderer.shadowMap.type = THREE.PCFShadowMap; W.sun.shadow.mapSize.set(1024, 1024); if (W.sun.shadow.map) { W.sun.shadow.map.dispose(); W.sun.shadow.map = null; } scene.traverse((o) => { if (o.material && !Array.isArray(o.material)) o.material.needsUpdate = true; }); }
+      else if (PERF.pr > PERF.floor) { PERF.pr = Math.max(PERF.floor, PERF.pr - 0.25); renderer.setPixelRatio(PERF.pr); resize(); } } }
+    else { PERF.low = 0; if (fps > 52 && PERF.pr < PERF.start && ++PERF.good >= 3) { PERF.good = 0; PERF.pr = Math.min(PERF.start, PERF.pr + 0.25); renderer.setPixelRatio(PERF.pr); resize(); } } }
   W.seaMat.uniforms.time.value = t; W.seaMat.uniforms.camPos.value.copy(camera.position);
   W.clouds.rotation.y += dt * 0.003;
   // 바람에 천막 가장자리가 흔들린다
