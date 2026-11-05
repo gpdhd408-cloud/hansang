@@ -227,9 +227,9 @@
     <section class="screen hidden" id="s-menu">
       <h2>오늘 뭐 드세요?</h2>
       <div class="menus" id="menus"></div>
-      <label class="photo"><input type="file" accept="image/*" id="photo"><span id="photoLabel">📷 음식 사진으로 만들기 (선택)</span></label>
+      <label class="photo hidden"><input type="file" accept="image/*" id="photo"><span id="photoLabel">📷 음식 사진으로 만들기 (선택)</span></label>
       <p class="hint hidden" id="photoStatus"></p>
-      <label class="field" id="dishField">내 음식<input id="dishText" type="text" maxlength="40" placeholder="직접 적어도 돼요 (예: 오므라이스, 마요 듬뿍)" autocomplete="off"></label>
+      <label class="field" id="dishField">내 음식<input id="dishText" type="text" maxlength="40" placeholder="메뉴에 없으면 적어 주세요 (예: 오므라이스, 마요 듬뿍)" autocomplete="off"></label>
       <img id="photoPreview" alt="올린 음식 사진" class="hidden">
       <button class="primary" id="sit" disabled>자리에 앉기</button>
     </section>
@@ -396,7 +396,10 @@ function computeScene() {
    ========================================================= */
 const canvas = $('#view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(1.75, devicePixelRatio || 1));
+const PERF = { pr: Math.min(1.5, devicePixelRatio || 1), acc: 0, n: 0, low: 0, stage: 0 };
+// 큰 화면(PC)은 픽셀 수가 많아 느려지기 쉬워, 화면 크기에 맞춰 해상도를 먼저 낮춰 둔다
+{ const px = innerWidth * innerHeight; if (px > 1.6e6) PERF.pr = Math.min(PERF.pr, 1); else if (px > 0.9e6) PERF.pr = Math.min(PERF.pr, 1.25); }
+renderer.setPixelRatio(PERF.pr);
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
@@ -1616,13 +1619,14 @@ function buildShells() {
 }
 // 다른 테이블들의 탁자와 의자
 function buildBgTables() {
-  BG_TABLES.forEach((t) => {
+  W.bgStools = [];
+  BG_TABLES.forEach((t, ti) => {
     const g = new THREE.Group(); g.position.set(t.x, 0, t.z); scene.add(g);
     cyl(BG_R, BG_R, 0.045, M('#8a5a36', 0.55), g, 0, TH - 0.0225, 0, 40);
     cyl(BG_R + 0.008, BG_R + 0.008, 0.012, M('#5e3a22', 0.6), g, 0, TH - 0.05, 0, 40);
     cyl(0.05, 0.05, TH - 0.06, M('#3a2a1e', 0.6, 0.2), g, 0, (TH - 0.06) / 2, 0, 10);
     cyl(0.26, 0.3, 0.03, M('#3a2a1e', 0.6, 0.2), g, 0, 0.015, 0, 20);
-    t.seats.forEach((a) => { const sx = Math.sin(a) * BG_SEAT, sz = Math.cos(a) * BG_SEAT; cyl(0.19, 0.17, 0.04, M('#c8382c', 0.45), g, sx, 0.46, sz, 18); const leg = cyl(0.15, 0.19, 0.44, new THREE.MeshStandardMaterial({ color: lin('#b5312a'), roughness: 0.5, side: THREE.DoubleSide }), g, sx, 0.22, sz, 18); leg.geometry = new THREE.CylinderGeometry(0.15, 0.19, 0.44, 18, 1, true); });
+    t.seats.forEach((a) => { const sx = Math.sin(a) * BG_SEAT, sz = Math.cos(a) * BG_SEAT, stg = new THREE.Group(); g.add(stg); stg.userData.bg = { t, a, ti }; W.bgStools.push(stg); cyl(0.19, 0.17, 0.04, M('#c8382c', 0.45), stg, sx, 0.46, sz, 18); const leg = cyl(0.15, 0.19, 0.44, new THREE.MeshStandardMaterial({ color: lin('#b5312a'), roughness: 0.5, side: THREE.DoubleSide }), stg, sx, 0.22, sz, 18); leg.geometry = new THREE.CylinderGeometry(0.15, 0.19, 0.44, 18, 1, true); });
     // 탁자 가운데 반찬과 소주
     const kc = new THREE.Group(); kc.position.set(0.04, TH, -0.03); g.add(kc); cyl(0.06, 0.05, 0.018, M('#f4f1ea', 0.3), kc, 0, 0.01, 0, 16); for (let i = 0; i < 5; i++) box(0.035, 0.012, 0.022, M('#c8402a', 0.6), kc, (rand(i + t.x) - 0.5) * 0.05, 0.024, (rand(i + t.z) - 0.5) * 0.05);
     const sj = new THREE.Group(); sj.position.set(-0.08, TH, 0.06); g.add(sj); const gl = M('#3f8f4f', 0.1, 0, { transparent: true, opacity: 0.8 }); cyl(0.03, 0.03, 0.14, gl, sj, 0, 0.07, 0, 12); cyl(0.012, 0.027, 0.045, gl, sj, 0, 0.16, 0, 10);
@@ -2552,6 +2556,7 @@ function clampDeck(v) {
 const seatTaken = (i, except) => state.people.some((q) => q !== except && q.seat === i);
 function freeSeat() { for (const i of [1, 4, 3, 2, 5, 0]) if (!seatTaken(i) && !(NET.reserved && NET.reserved.has(i))) return i; return -1; }
 function sitAt(p, i) {
+  if ((p.isMe || p.remote) && p.tbl) { p.tbl = null; p.ang = 0; }
   const moved = p.seat !== i || !p.items.chop;
   p.seat = i; p.standing = false; faceTable(p); p.seated = true; p.root.updateMatrixWorld(true);
   if (!p.anchor) { p.anchor = new THREE.Object3D(); scene.add(p.anchor); }
@@ -2562,6 +2567,22 @@ function sitAt(p, i) {
   }
   p.hold.R = defaultHold(p); p.hold.L = null;
 }
+// 다른 탁자(작은 탁자)의 자리
+const sameAng = (a, b) => Math.abs(a - b) < 0.01;
+function bgTaken(t, a, except) { return state.bg.some((q) => q !== except && q.tbl === t && sameAng(q.ang, a) && q.seated && q.root.visible) || state.people.some((q) => q !== except && q.tbl === t && sameAng(q.ang, a) && (q.seated || q.remote)); }
+function bgSeatPos(t, a, r = BG_SEAT) { return new THREE.Vector3(t.x + Math.sin(a) * r, 0, t.z + Math.cos(a) * r); }
+function sitAtBg(p, t, a) {
+  p.tbl = t; p.ang = a; p.seat = -1; p.standing = false; faceTable(p); p.seated = true; p.root.updateMatrixWorld(true);
+  if (!p.anchor) { p.anchor = new THREE.Object3D(); scene.add(p.anchor); }
+  clearTable(p); p.anchor.position.copy(p.root.position); p.anchor.rotation.y = p.root.rotation.y; p.anchor.updateMatrixWorld(true);
+  buildDish(p); if (state.seated) startLoop(p); p.hold.R = defaultHold(p); p.hold.L = null;
+}
+function bgVacate(t, a) { state.bg.filter((q) => q.tbl === t && sameAng(q.ang, a) && q.root.visible).forEach((q) => { q.seated = false; q.root.visible = false; clearTable(q); if (q.stopLoop) { q.stopLoop(); q.stopLoop = null; } }); }
+async function moveMeBg(t, a) {
+  const stand = bgSeatPos(t, a, BG_SEAT + 0.5); await moveMe(stand, null, true); const me = state.me;
+  if (me.walking || me.root.position.distanceTo(stand) > 0.6 || bgTaken(t, a, me)) return;
+  sitAtBg(me, t, a); lookAtTable(); toast('이 자리에 앉았어요. 내 음식도 다시 차려 드렸어요 🍚'); if (EX.buddy) endTogether();
+}
 // 내 캐릭터 이동: 바닥을 누르면 그곳으로, 의자를 누르면 그 자리에 앉는다
 async function moveMe(target, seatIdx = null, quiet = false) {
   const me = state.me;
@@ -2569,6 +2590,7 @@ async function moveMe(target, seatIdx = null, quiet = false) {
   if (me.holdingCat && (seatIdx !== null || !onDeckXZ(target.x, target.z) || onBWXZ(target.x, target.z))) { const nm = me.holdingCat.d.name; releaseCat(me); toast(seatIdx !== null ? `${nm}를 살포시 내려 줬어요` : `${nm}는 가게에서 기다릴게요 🐾`); }
   cancelAction(me); if (me.groundSit) standFromTowel(true);
   me.moveToken = (me.moveToken || 0) + 1; const token = me.moveToken;
+  if (me.seated) clearTable(me);   // 자리에서 일어나면 상을 치운다 (다시 앉으면 같은 음식이 다시 차려진다)
   me.seated = false; me.standing = true;
   const pts = pathTo(me.root.position.clone(), target);
   if (seatIdx !== null) pts.push(seatPos(seatIdx));
@@ -2607,7 +2629,7 @@ async function guestArrive(opts) {
 }
 // 건배: 모두 함께 잔을 들어 짠!
 function cheersAll(initiator) {
-  const ppl = state.people.filter((p) => p.seated && !p.busy && !p.walking);
+  const ppl = initiator.tbl ? state.bg.filter((p) => p.tbl === initiator.tbl && p.seated && p.root.visible && !p.busy).concat(state.people.filter((p) => p.tbl === initiator.tbl && p.seated)) : state.people.filter((p) => !p.tbl && p.seated && !p.busy && !p.walking);
   ppl.forEach((p) => setTimeout(() => { cancelAction(p); runAction(p, 'cheers'); if (p !== initiator && Math.random() < 0.5) showBubble(p, '🍻 짠!'); }, p === initiator ? 0 : 200 + Math.random() * 300));
   setTimeout(() => {
     if (!Sound.ctx) return; const c = makePanner(0, 1.0, 0, 1.5, Sound.bus.food);
@@ -3912,6 +3934,7 @@ function pick(e, stoolsOnly = false) {
   const hs = ray.intersectObjects(W.stools, true);
   if (hs.length) { let o = hs[0].object; while (o && o.userData.seat === undefined) o = o.parent; if (o) return { seat: o.userData.seat }; }
   if (stoolsOnly) return null;
+  if (W.bgStools) { const hb = ray.intersectObjects(W.bgStools, true); if (hb.length) { let o = hb[0].object; while (o && !o.userData.bg) o = o.parent; if (o) return { bgSeat: o.userData.bg }; } }
   if (W.bwTop) { const hb = ray.intersectObject(W.bwTop); if (hb.length) return { bw: hb[0].point.clone() }; }
   const hd = ray.intersectObject(W.deck); if (hd.length) return { point: hd[0].point.clone() };
   const hs2 = ray.intersectObject(W.sand); if (hs2.length) return { sand: hs2[0].point.clone() };
@@ -3958,6 +3981,8 @@ canvas.addEventListener('pointerup', (e) => {
     const v = clampSea(hp); state.me.swim.target = v; state.me.swim.userTarget = true; W.clickRing.position.set(v.x, -0.53, v.z); W.clickRing.visible = true; W.clickRing.material.opacity = 0.9; W.clickT = 1; return;
   }
   const h = pick(e); if (!h) return;
+  if (h.bgSeat) { const { t: bt, a: ba } = h.bgSeat; if (state.me.seated && state.me.tbl === bt && Math.abs(state.me.ang - ba) < 0.01) { toast('지금 앉아 있는 자리예요'); return; }
+    if (bgTaken(bt, ba)) { toast('다른 분이 앉아 있는 자리예요'); return; } moveMeBg(bt, ba); return; }
   if (h.seat !== undefined) {
     if (state.me.seated && state.me.seat === h.seat) { toast('지금 앉아 있는 자리예요'); return; }
     if (seatTaken(h.seat, state.me)) { toast('다른 분이 앉아 있는 자리예요'); return; }
@@ -4009,7 +4034,7 @@ function updateCamera(dt, t) {
   camera.lookAt(pivot.clone().addScaledVector(camFwd, 0.6));
   W.fill.position.copy(camera.position).add(new THREE.Vector3(0, 1, 0)); W.fill.target.position.copy(pivot);
 }
-function lookAtTable() { look.yaw = state.me ? seatAngle(state.me.seat) : 0; look.pitch = -0.3; look.vYaw = 0; }
+function lookAtTable() { look.yaw = state.me ? (state.me.tbl ? state.me.ang : seatAngle(state.me.seat)) : 0; look.pitch = -0.3; look.vYaw = 0; }
 
 /* =========================================================
    9. 소리: 음식·파도·바람·자연을 따로 조절
@@ -4323,7 +4348,7 @@ function placeAboveDock() {   // 아래 버튼이 두 줄이 되어도 채팅창
   $('#refillMenu').style.bottom = Math.round(H - top + 8) + 'px';
   $('#chatLog').style.bottom = Math.round(H - top + 8) + 'px';
 }
-function chatMates() { const me = state.me; if (!me || me.entering) return []; const L = me.seated ? state.people.filter((q) => !q.isMe && q.seated) : state.people.filter((q) => q.remote && !q.seated && q.root.position.distanceTo(me.root.position) < 12); if (EX.buddy && !L.includes(EX.buddy)) L.push(EX.buddy); return L; }
+function chatMates() { const me = state.me; if (!me || me.entering) return []; const L = me.seated ? (me.tbl ? state.people.filter((q) => q.remote && q.tbl === me.tbl && q.seated) : state.people.filter((q) => !q.isMe && !q.tbl && q.seated)) : state.people.filter((q) => q.remote && !q.seated && q.root.position.distanceTo(me.root.position) < 12); if (EX.buddy && !L.includes(EX.buddy)) L.push(EX.buddy); return L; }
 function toggleChat(force) {
   const app = $('#app'), open = force !== undefined ? force : !app.classList.contains('chatting');
   if (open && !chatMates().length) { toast('같은 테이블이나 함께 산책하는 분과 이야기할 수 있어요'); return; }
@@ -4452,7 +4477,7 @@ function startGuestLife() {
 // ---------- 누군가와 함께 산책 ----------
 const BUDDY_LINES = { beach: ['바다 냄새 좋다~ 🌊', '파도 소리 좋네요', '맨발로 걸으니까 시원해요 👣', '저기 배 보여요? ⛵', '오늘 오길 잘했다 😊'], night: ['별이 쏟아지네요 ✨', '밤바다 진짜 예쁘다', '오징어 배 불빛 좀 봐요'] };
 const zoneOf = (v) => (onBWXZ(v.x, v.z) ? 'bw' : onDeckXZ(v.x, v.z) ? 'deck' : 'beach');
-function buddyCandidates() { const me = state.me; return state.people.filter((q) => !q.isMe && q.seated && !q.busy && !q.leaving && !q.walking); }
+function buddyCandidates() { const me = state.me; if (!me.seated) return []; if (me.tbl) return state.bg.filter((q) => q.tbl === me.tbl && q.seated && q.root.visible && !q.busy && !q.walking); return state.people.filter((q) => !q.isMe && !q.remote && !q.tbl && q.seated && !q.busy && !q.leaving && !q.walking); }   // 같은 탁자 사람과만
 function startTogether(c) {
   const me = state.me; if (EX.buddy || !c) return;
   cancelAction(c); Object.assign(c, { busy: true, seated: false, standing: true, replan: 0, chatT: 6 }); c.hold.R = null; EX.buddy = c;
@@ -4464,16 +4489,16 @@ function endTogether() {
   c.moveToken = (c.moveToken || 0) + 1; if (c.groundSit) { c.groundSit = false; c.hips.rotation.x = 0; if (c.towel) c.towel.visible = false; }
   (async () => {
     await sleep(400); c.walking = false;
-    const pts = pathTo(c.root.position.clone(), seatPos(c.seat, 1.65)); pts.push(seatPos(c.seat));
+    const home = c.tbl ? bgSeatPos(c.tbl, c.ang) : seatPos(c.seat), pts = pathTo(c.root.position.clone(), c.tbl ? bgSeatPos(c.tbl, c.ang, BG_SEAT + 0.5) : seatPos(c.seat, 1.65)); pts.push(home);
     await walkPath(c, pts, 1.3);
     if (c.onBeach) { c.onBeach = false; setBeachLook(c, false); }
-    sitAt(c, c.seat); c.hold.R = defaultHold(c); c.busy = false; showBubble(c, ['산책 좋았어요 😊', '덕분에 바람 쐬었네요~', '다시 먹어 볼까요 🥢'][Math.floor(Math.random() * 3)]);
+    if (c.tbl) { faceTable(c); c.seated = true; c.standing = false; } else sitAt(c, c.seat); c.hold.R = defaultHold(c); c.busy = false; showBubble(c, ['산책 좋았어요 😊', '덕분에 바람 쐬었네요~', '다시 먹어 볼까요 🥢'][Math.floor(Math.random() * 3)]);
   })();
 }
 function separatePeople() {
   const mov = [], fix = [];
   const add = (q, r = 0.21) => { if (!q || !q.root || !q.root.visible || !q.root.parent || q.remote || q.ghostT > 0) return; (q.seated || q.groundSit ? fix : mov).push([q, r]); };   // 진짜 사람끼리는 서로 통과한다
-  state.people.forEach((q) => add(q)); (state.bg || []).forEach((q) => fix.push([q, 0.2])); (EX.list || []).forEach((q) => add(q));
+  state.people.forEach((q) => add(q)); (state.bg || []).forEach((q) => { if (q.root.visible) fix.push([q, 0.2]); }); (EX.list || []).forEach((q) => add(q));
   BL.walkers.forEach((w) => add(w.p)); if (state.me && state.me.swimming) { const i = mov.findIndex(([q]) => q === state.me); if (i >= 0) mov.splice(i, 1); } TW.list.forEach((o) => { if (o.p.root.visible) fix.push([o.p, 0.3]); });
   const moved = new Set();
   for (let a = 0; a < mov.length; a++) {
@@ -4558,7 +4583,7 @@ function subMenu(kind, items) {
   items.forEach(([label, fn, on]) => { const b = document.createElement('button'); b.textContent = label; if (on) b.classList.add('on'); b.onclick = () => { m.classList.add('hidden'); fn(); }; m.appendChild(b); });
   m.classList.remove('hidden'); placeAboveDock();
 }
-function lookDir(off) { const me = state.me; const base = me && me.seated ? seatAngle(me.seat) : me ? me.root.rotation.y + Math.PI : 0; look.yaw = base + off; look.pitch = -0.25; look.vYaw = 0; }
+function lookDir(off) { const me = state.me; const base = me && me.seated ? (me.tbl ? me.ang : seatAngle(me.seat)) : me ? me.root.rotation.y + Math.PI : 0; look.yaw = base + off; look.pitch = -0.25; look.vYaw = 0; }
 let dockMode = null;
 function dockModeNow() {
   const me = state.me; if (!me || me.entering) return null;
@@ -4698,6 +4723,12 @@ const clock = new THREE.Clock();
 function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w / h < 0.8 ? 72 : 58; camera.updateProjectionMatrix(); }
 function frame() {
   const dt = Math.min(0.1, clock.getDelta()), t = clock.elapsedTime; lastDt = dt;
+  // 느리면 스스로 화질을 낮춘다: 해상도 → 그림자 → 더 낮은 해상도
+  PERF.acc += dt; PERF.n++; if (PERF.acc > 2.5) { const fps = PERF.n / PERF.acc; PERF.acc = 0; PERF.n = 0;
+    if (fps < 40 && !document.hidden) { PERF.low++; if (PERF.low >= 2) { PERF.low = 0; PERF.stage++;
+      if (PERF.stage === 1 && PERF.pr > 1) { PERF.pr = 1; renderer.setPixelRatio(1); resize(); }
+      else if (PERF.stage <= 2) { renderer.shadowMap.type = THREE.PCFShadowMap; W.sun.shadow.mapSize.set(1024, 1024); if (W.sun.shadow.map) { W.sun.shadow.map.dispose(); W.sun.shadow.map = null; } scene.traverse((o) => { if (o.material && o.material.needsUpdate !== undefined) o.material.needsUpdate = true; }); }
+      else if (PERF.stage === 3) { PERF.pr = 0.8; renderer.setPixelRatio(0.8); resize(); } } } else PERF.low = 0; }
   W.seaMat.uniforms.time.value = t; W.seaMat.uniforms.camPos.value.copy(camera.position);
   W.clouds.rotation.y += dt * 0.003;
   // 바람에 천막 가장자리가 흔들린다
@@ -4711,7 +4742,7 @@ function frame() {
   (W.fanBlades || []).forEach((f, i) => { if (!W.fans[i].visible) return; f.blades.rotation.z -= dt * 18; f.head.rotation.y = Math.sin(t * 0.4 + i) * 0.7; });
   (W.lanterns || []).forEach((l, i) => { l.rotation.z = Math.sin(t * 1.3 + i) * 0.06 * wind; l.rotation.x = Math.cos(t * 1.1 + i) * 0.04 * wind; });
   if (W.cat) { W.cat.body.scale.y = 1 + Math.sin(t * 1.6) * 0.04; W.cat.tail.rotation.y = Math.sin(t * 0.8) * 0.3; }
-  updateTank(dt, t); updateDoor(dt); updateBuddy(dt, t); updateMeSwim(dt); updateShades(); netPosTick(dt); updateRemotes(dt, t); if (NET.ready) { if (state.me && (state.me.entering || state.me.seated) && NET.myG === null) netClaimSeat(); netTrack(); if (state.me && NET.myG !== null && (W.netT = (W.netT || 0) + dt) > 2) { W.netT = 0; placeRemotes(); } } updateSnowballs(dt); updateSnowFight(); updateKite(dt, t); { const can = chatMates().length > 0 && !look.intro, app = $('#app'); if (app.classList.contains('chatting') && !can) toggleChat(false); const fab = can && !app.classList.contains('chatting'); if ($('#chatFab').classList.contains('hidden') === fab || app.classList.contains('has-chat') !== can) { $('#chatFab').classList.toggle('hidden', !fab); app.classList.toggle('has-chat', can); dockFade(); placeAboveDock(); } } separatePeople();
+  updateTank(dt, t); updateDoor(dt); updateBuddy(dt, t); updateMeSwim(dt); updateShades(); netPosTick(dt); updateRemotes(dt, t); if ((W.sweepT = (W.sweepT || 0) + dt) > 0.5) { W.sweepT = 0; seatSweep(); } if (NET.ready) { if (state.me && (state.me.entering || state.me.seated) && NET.myG === null) netClaimSeat(); netTrack(); if (state.me && NET.myG !== null && (W.netT = (W.netT || 0) + dt) > 2) { W.netT = 0; placeRemotes(); } } updateSnowballs(dt); updateSnowFight(); updateKite(dt, t); { const can = chatMates().length > 0 && !look.intro, app = $('#app'); if (app.classList.contains('chatting') && !can) toggleChat(false); const fab = can && !app.classList.contains('chatting'); if ($('#chatFab').classList.contains('hidden') === fab || app.classList.contains('has-chat') !== can) { $('#chatFab').classList.toggle('hidden', !fab); app.classList.toggle('has-chat', can); dockFade(); placeAboveDock(); } } separatePeople();
   (W.ballRings || []).forEach((r, i) => { const k = 1 + Math.sin(t * 5 + i) * 0.12; r.scale.set(k, k, 1); r.material.opacity = 0.6 + Math.sin(t * 5 + i) * 0.3; });
   (W.pickRings || []).forEach((r, i) => { const k = 1 + Math.sin(t * 5 + i) * 0.12; r.scale.set(k, k, 1); r.material.opacity = 0.6 + Math.sin(t * 5 + i) * 0.3; });
 
@@ -4769,10 +4800,10 @@ function netConnect(table = 1) {
 }
 function myMeta() {
   const me = state.me; if (!me || NET.myG === null) return { id: NET.id, seated: false, joinedAt: NET.joinedAt };
-  return { id: NET.id, seated: !!(me.seated || me.entering), entering: !!me.entering, g: toGlobal(me.entering || !me.seated ? (me.homeSeat || 0) : me.seat), off: NET.offset, joinedAt: NET.joinedAt, name: me.name, gender: me.gender || state.draft.gender, top: state.draft.top, menu: String(me.menu).startsWith('custom') ? 'custom' : me.menu,
+  return { id: NET.id, seated: !!(me.seated || me.entering), entering: !!me.entering, g: toGlobal(me.entering || !me.seated || me.tbl ? (me.homeSeat || 0) : me.seat), tb: me.seated && me.tbl ? BG_TABLES.indexOf(me.tbl) : -1, a: me.tbl ? me.ang : 0, off: NET.offset, joinedAt: NET.joinedAt, name: me.name, gender: me.gender || state.draft.gender, top: state.draft.top, menu: String(me.menu).startsWith('custom') ? 'custom' : me.menu,
     custom: String(me.menu).startsWith('custom') ? { spec: me.dishSpec, menu: MENUS[me.menu] } : null };
 }
-function netTrack(force) { if (!NET.ch || !NET.ready) return; const m = myMeta(), key = JSON.stringify([m.seated, m.g, m.menu, m.entering]); if (!force && key === NET.last) return; NET.last = key; try { NET.ch.track(m); } catch (e) {} }
+function netTrack(force) { if (!NET.ch || !NET.ready) return; const m = myMeta(), key = JSON.stringify([m.seated, m.g, m.menu, m.entering, m.tb, m.a]); if (!force && key === NET.last) return; NET.last = key; try { NET.ch.track(m); } catch (e) {} }
 // 내가 처음 앉을 때 전체 자리 번호를 고른다 (진짜 사람이 없는 가장 앞 번호)
 function netClaimSeat() {
   if (!NET.ch) return; const taken = new Set([...NET.remotes.values()].filter((r) => r.meta.g !== undefined && r.meta.name).map((r) => r.meta.g));
@@ -4794,10 +4825,14 @@ function placeRemotes() {
   if (!state.me || NET.myG === null) return;
   NET.reserved = new Set([...NET.remotes.values()].filter((r) => r.meta.g !== undefined && r.meta.name).map((r) => toLocal(r.meta.g)));
   NET.remotes.forEach((r) => {
+    if (r.meta.seated && r.meta.tb >= 0 && BG_TABLES[r.meta.tb]) {   // 작은 탁자에 앉았다
+      const t = BG_TABLES[r.meta.tb], a = r.meta.a; if (!r.p) { if (!r.arriving) remoteSpawnFree(r, true); return; }
+      if (!(r.p.seated && r.p.tbl === t && sameAng(r.p.ang, a))) { bgVacate(t, a); if (r.p.towel) r.p.towel.visible = false; r.p.groundSit = false; sitAtBg(r.p, t, a); } return;
+    }
     const want = r.meta.seated ? toLocal(r.meta.g) : null;
     if (want === null) { if (!r.p && !r.arriving && r.pos && r.meta.name && r.meta.g !== undefined) remoteSpawnFree(r); return; }   // 산책 중인 사람은 자리를 지키고, 움직임은 updateRemotes가 따라간다
     if (!r.p) { if (!r.arriving) remoteArrive(r, want); return; }
-    if (r.p.seat !== want && r.p.seated && !r.p.busy) { r.p.seat = want; sitAt(r.p, want); }
+    if ((r.p.seat !== want || r.p.tbl) && r.p.seated && !r.p.busy) { state.people.filter((q) => q.seat === want && !q.isMe && !q.remote && !q.leaving).forEach(npcVacate); sitAt(r.p, want); }
   });
 }
 function remoteMenuKey(r) { const m = r.meta; if (m.menu !== 'custom' || !m.custom) return MENUS[m.menu] ? m.menu : 'ramen'; const k = 'custom_' + r.id; MENUS[k] = Object.assign({}, CUSTOM_MENU, m.custom.menu || {}); return k; }
@@ -4861,12 +4896,20 @@ function onRemotePos(pl) {
   r.pos = Object.assign({}, pl, { x: t.x, z: t.z, ry: pl.ry + t.a, at: performance.now() });
   if (!r.p && !r.arriving && r.meta.name && r.meta.g !== undefined) remoteSpawnFree(r);
 }
-function remoteSpawnFree(r) {
+function remoteSpawnFree(r, bg) {
   const m = r.meta, menu = remoteMenuKey(r), i = toLocal(m.g);
+  if (bg) { const t = BG_TABLES[m.tb]; bgVacate(t, m.a); const p = addPerson({ name: String(m.name || '손님').slice(0, 10), top: m.top || '#3d4a63', gender: m.gender === 'f' ? 'f' : 'm', menu, seat: -1, remote: r.id, dishSpec: m.custom ? m.custom.spec : null }); r.p = p; sitAtBg(p, t, m.a); lifeLoop(p); return; }
   state.people.filter((q) => q.seat === i && !q.isMe && !q.remote && !q.leaving).forEach(npcVacate);
   const p = addPerson({ name: String(m.name || '손님').slice(0, 10), top: m.top || '#3d4a63', gender: m.gender === 'f' ? 'f' : 'm', menu, seat: i, remote: r.id, dishSpec: m.custom ? m.custom.spec : null });
   r.p = p; p.seated = false; p.standing = true; if (r.pos) { p.root.position.set(r.pos.x, r.pos.y || 0, r.pos.z); p.root.rotation.y = r.pos.ry; }
   sitAt(p, i); p.seated = false; p.standing = true; if (r.pos) p.root.position.set(r.pos.x, r.pos.y || 0, r.pos.z);   // 상은 차려 두고 몸은 산책 중
+}
+// 같은 의자에 두 사람이 겹치지 않게: 진짜 사람이 앉은 자리의 가짜 손님은 바로 비켜 준다
+function seatSweep() {
+  state.people.forEach((p) => { if (!p.remote || !p.seated) return;
+    if (p.tbl) bgVacate(p.tbl, p.ang);
+    else state.people.filter((q) => q !== p && q.seat === p.seat && !q.tbl && !q.isMe && !q.remote && !q.leaving && (q.seated || q.walking)).forEach(npcVacate); });
+  const me = state.me; if (me && me.seated && me.tbl) bgVacate(me.tbl, me.ang);
 }
 function updateRemotes(dt, t) {
   NET.remotes.forEach((r) => {
@@ -4874,11 +4917,11 @@ function updateRemotes(dt, t) {
     if (r.meta.seated) {   // 자리로 돌아왔다
       if (!p.seated && !p.busy) { if (p.towel) p.towel.visible = false; if (p.kite) { scene.remove(p.kite.g); scene.remove(p.kite.line); p.kite = null; } p.groundSit = false; p.lying = false; p.hips.rotation.x = 0; p.swimmingR = 0; if (p.tubeR) p.tubeR.visible = false;
         if (p.onBeach) { p.onBeach = false; setBeachLook(p, false); } [p.shades, p.hat].forEach((o) => o && (o.visible = false)); p.parasolShow = false; if (p.parasol) p.parasol.visible = false;
-        sitAt(p, toLocal(r.meta.g)); }
+        if (r.meta.tb >= 0 && BG_TABLES[r.meta.tb]) sitAtBg(p, BG_TABLES[r.meta.tb], r.meta.a); else sitAt(p, toLocal(r.meta.g)); }
       return;
     }
     const s = r.pos; if (!s) return;
-    if (p.seated) { cancelAction(p); p.seated = false; p.standing = true; p.hold.R = null; p.hold.L = null; }
+    if (p.seated) { cancelAction(p); clearTable(p); p.seated = false; p.standing = true; p.hold.R = null; p.hold.L = null; }
     const q = p.root.position, dx = s.x - q.x, dz = s.z - q.z, d = Math.hypot(dx, dz);
     if (d > 8) { q.x = s.x; q.z = s.z; } else if (d > 0.01) { const sp = Math.min(d, Math.max(1.5, d * 3) * dt); q.x += dx / d * sp; q.z += dz / d * sp; p.walkPhase += sp * 7; }
     p.walking = !s.ts && !s.sw && (s.w === 1 || d > 0.08);
