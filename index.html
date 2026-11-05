@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Nanum+Brush+Script&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <!-- 3D 그리기 도구: three.js -->
+<script async src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
   :root { --ink: #221f1b; --paper: #fbf7f0; --accent: #e0703c; --muted: #756f66; --glass: rgba(20, 22, 34, 0.45); }
@@ -25,6 +26,7 @@
   .chip { pointer-events: auto; display: inline-flex; align-items: center; gap: 10px; padding: 9px 16px; border-radius: 999px; background: var(--glass); color: #fff; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: 14px; border: 1px solid rgba(255,255,255,0.15); }
   .chip strong { font-family: 'Gowun Dodum', sans-serif; font-size: 16px; }
   .chip .dot { opacity: 0.5; }
+  #onlineCnt { padding: 2px 9px; border-radius: 999px; background: rgba(46,160,100,0.85); font-size: 12px; }
   .icon-btn { width: 42px; height: 42px; padding: 0; justify-content: center; font-size: 19px; cursor: pointer; }
   .icon-btn[aria-expanded="true"] { background: rgba(20, 22, 34, 0.68); border-color: rgba(255,255,255,0.55); }
   .icon-btn svg { display: block; }
@@ -117,6 +119,7 @@
   #cardModal .screen { width: min(440px, 100%); gap: 14px; }
   #chatFab { position: absolute; right: 14px; bottom: 20px; width: 54px; height: 54px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3); background: rgba(224, 112, 60, 0.92); color: #fff; display: grid; place-items: center; box-shadow: 0 6px 20px rgba(224,112,60,0.4); z-index: 4; cursor: pointer; transition: transform 0.15s; }
   #chatFab:active { transform: scale(0.94); }
+  #chatFab.ping::after { content: ''; position: absolute; top: 4px; right: 4px; width: 12px; height: 12px; border-radius: 50%; background: #2ec27e; border: 2px solid #fff; }
   #app.has-chat #dock { max-width: calc(100% - 24px - 150px); }
   #app.chatting #dock, #app.chatting #refillMenu.hidden { display: none; }
   #app.chatting.actfloat #dock { display: flex; animation: none; opacity: 1; }
@@ -171,7 +174,7 @@
   <canvas id="view" aria-label="바닷가 노포 식탁 풍경. 끌어서 둘러볼 수 있어요"></canvas>
 
   <header id="topbar">
-    <div class="chip" id="meChip"><strong>한 상</strong><span class="dot">|</span><span id="status"></span><span class="dot">|</span><span id="meName"></span></div>
+    <div class="chip" id="meChip"><strong>한 상</strong><span class="dot">|</span><span id="status"></span><span class="dot">|</span><span id="meName"></span><span id="onlineCnt" class="hidden"></span></div>
     <div class="right">
       <button class="chip icon-btn" id="shotBtn" aria-label="사진 찍기" title="사진 찍기"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.6-2.2h6.8L17 8h3v11H4z"/><circle cx="12" cy="13.2" r="3.6"/></svg></button>
       <button class="chip icon-btn" id="soundBtn" aria-expanded="false" aria-label="소리" title="소리"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" stroke="none"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/></svg></button>
@@ -1876,11 +1879,11 @@ function textSprite(text, { bg = 'rgba(20,20,32,0.6)', fg = '#fff', h = 0.11, fo
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, toneMapped: false })); s.scale.set((h * c.width) / c.height, h, 1); return s;
 }
 
-function addPerson({ name = '', top, bottom, hair, gender, menu, seat = -1, isMe = false, photoImg = null, dishSpec = null, tbl = null, ang = 0 }) {
+function addPerson({ name = '', top, bottom, hair, gender, menu, seat = -1, isMe = false, photoImg = null, dishSpec = null, tbl = null, ang = 0, remote = null }) {
   const h = makeHuman({ top, bottom, hair, gender });
-  const p = Object.assign(h, { name, menu, seat, isMe, photoImg, dishSpec, tbl, ang, bg: !!tbl, seated: false, busy: false, walking: false, walkPhase: 0, hipY: 0.52, water: 1, tilt: 0, kettleTilt: 0,
+  const p = Object.assign(h, { name, menu, seat, isMe, photoImg, dishSpec, remote, tbl, ang, bg: !!tbl, seated: false, busy: false, walking: false, walkPhase: 0, hipY: 0.52, water: 1, tilt: 0, kettleTilt: 0,
     handT: { R: V(L_.restR), L: V(L_.restL) }, tipT: V(L_.tipDish), act: null, hold: { R: null, L: null }, chew: 0, stopLoop: null, items: {} });
-  if (!tbl) { p.tag = textSprite(isMe ? `나 · ${name}` : name, isMe ? { bg: 'rgba(224,112,60,0.92)', h: 0.065 } : {}); p.tag.position.y = 0.95; p.hips.add(p.tag); }
+  if (!tbl) { p.tag = textSprite(isMe ? `나 · ${name}` : remote ? `● ${name}` : name, isMe ? { bg: 'rgba(224,112,60,0.92)', h: 0.065 } : remote ? { bg: 'rgba(46,140,96,0.9)', h: 0.065 } : {}); p.tag.position.y = 0.95; p.hips.add(p.tag); }
   scene.add(p.root); (tbl ? state.bg : state.people).push(p);
   return p;
 }
@@ -2088,7 +2091,7 @@ function buildDish(p) {
     const mu = new THREE.Group(); mu.position.copy(toWorld(p, [0.17, TH, 0.45])); scene.add(mu);
     cyl(0.035, 0.03, 0.02, M('#f4f1ea', 0.3), mu, 0, 0.01, 0, 16); for (let i = 0; i < 5; i++) box(0.015, 0.015, 0.015, M('#fbf8ee', 0.3), mu, (rand(i) - 0.5) * 0.03, 0.026, (rand(i + 1) - 0.5) * 0.03);
     shadowify(mu);
-  } else if (p.menu === 'custom' && p.dishSpec) { // 사진으로 만든 내 요리
+  } else if (String(p.menu).startsWith('custom') && p.dishSpec) { // 사진으로 만든 내 요리
     const top = buildCustomDish(g, p.dishSpec); if (p.dishSpec.eat === 'hand') { const hp = makeHandPiece(p.dishSpec); hp.position.set(0.05, top + 0.02, 0.06); hp.rotation.set(0.1, -0.6, 0); g.add(hp); hp.userData.home = { p: hp.position.clone(), r: hp.rotation.clone() }; p.drums = [null, hp]; } p.brothColor = p.dishSpec.base && p.dishSpec.base.type === 'soup' ? hexOk(p.dishSpec.base.color, '#e9dcc4') : null; p.steamAt = p.dishSpec.steam ? top + 0.04 : -1;
   } else { // 도시락
     box(0.22, 0.04, 0.15, M('#2b2b2e', 0.5), g, 0, 0.02, 0);
@@ -2542,7 +2545,7 @@ function clampDeck(v) {
   return v;
 }
 const seatTaken = (i, except) => state.people.some((q) => q !== except && q.seat === i);
-function freeSeat() { for (const i of [1, 4, 3, 2, 5, 0]) if (!seatTaken(i)) return i; return -1; }
+function freeSeat() { for (const i of [1, 4, 3, 2, 5, 0]) if (!seatTaken(i) && !(NET.reserved && NET.reserved.has(i))) return i; return -1; }
 function sitAt(p, i) {
   const moved = p.seat !== i || !p.items.chop;
   p.seat = i; p.standing = false; faceTable(p); p.seated = true; p.root.updateMatrixWorld(true);
@@ -4316,7 +4319,7 @@ function chatMates() { const me = state.me; if (!me || me.entering) return []; c
 function toggleChat(force) {
   const app = $('#app'), open = force !== undefined ? force : !app.classList.contains('chatting');
   if (open && !chatMates().length) { toast('같은 테이블이나 함께 산책하는 분과 이야기할 수 있어요'); return; }
-  app.classList.toggle('chatting', open); app.classList.remove('actfloat');
+  app.classList.toggle('chatting', open); app.classList.remove('actfloat'); if (open) $('#chatFab').classList.remove('ping');
   $('#chatBar').classList.toggle('hidden', !open); $('#chatLog').classList.toggle('hidden', !open); $('#refillMenu').classList.add('hidden');
   $('#chatInput').placeholder = EX.buddy && !state.me.seated ? `${EX.buddy.name}님에게 말 걸기` : '같은 테이블에 말 걸기';
   placeAboveDock();
@@ -4344,8 +4347,9 @@ function npcAnswer(text, q) {
 function sendChat(text) {
   const me = state.me; text = text.trim(); if (!me || !text) return; const mates = chatMates();
   if (!mates.length) { toast('같은 테이블이나 함께 산책하는 분과 이야기할 수 있어요'); toggleChat(false); return; }
-  sayChat(me, text);
-  const who = mates.slice().sort(() => Math.random() - 0.5).slice(0, EX.buddy && !me.seated ? 1 : 1 + (Math.random() < 0.4 ? 1 : 0));
+  sayChat(me, text); netSend('chat', { text });
+  if (mates.some((q) => q.remote)) return;   // 진짜 사람이 있으면 가짜 손님은 끼어들지 않는다
+  const who = mates.filter((q) => !q.remote).sort(() => Math.random() - 0.5).slice(0, EX.buddy && !me.seated ? 1 : 1 + (Math.random() < 0.4 ? 1 : 0));
   who.forEach((q, k) => setTimeout(() => { if (chatMates().includes(q)) sayChat(q, npcAnswer(text, q)); }, 1300 + k * 1600 + Math.random() * 900));
 }
 function renderPreview() {
@@ -4415,7 +4419,7 @@ async function sitDown() {
   state.me = me; $("#meName").textContent = me.name; me.root.position.set(3.4, 0, 6.6); me.root.rotation.y = Math.PI; me.entering = true; me.homeSeat = 0;
   look.intro = false; look.yaw = 0.35; look.pitch = -0.25; camera.position.set(3.6, 1.8, 7.8);
   await walkPath(me, [DOOR_IN.clone(), seatPos(0, 1.65), seatPos(0)], 1.1);
-  sitAt(me, 0); me.entering = false; lookAtTable();
+  sitAt(me, 0); me.entering = false; lookAtTable(); netClaimSeat();
   $('#dragHint').classList.remove('hidden'); setTimeout(() => ($('#dragHint').style.opacity = 0), 5000);
   toast(`${MENUS[d.menu].word}… 자리에 앉았어요`);
   setTimeout(() => runAction(me, MENUS[me.menu].eat), 1200);
@@ -4590,9 +4594,9 @@ function doAction(act) {
   if (act.startsWith('refill:') && onBWXZ(me.root.position.x, me.root.position.z)) { toast('노포 안으로 돌아가면 리필할 수 있어요'); return; }
   if (act.startsWith('refill:')) { const k = act.slice(7); if (me.busy) { toast('지금 하던 일을 마치는 중이에요'); return; } toast(`${eulReul(LABEL[k])} 리필하러 가요`); refill(me, k).then((ok) => { if (ok) toast(k === 'water' ? '물을 가득 따랐어요' : `${eulReul(LABEL[k])} 채웠어요`); }); return; }
   switch (act) {
-    case 'eat': manual(MENUS[me.menu].eat); break;
-    case 'drink': if (me.water < 0.05) toast('컵이 비었어요. 리필에서 물을 골라 보세요'); else manual('drink'); break;
-    case 'cheers': showBubble(me, '🍻 짠!'); cheersAll(me); break;
+    case 'eat': manual(MENUS[me.menu].eat); netSend('act', { a: 'eat' }); break;
+    case 'drink': if (me.water < 0.05) toast('컵이 비었어요. 리필에서 물을 골라 보세요'); else { manual('drink'); netSend('act', { a: 'drink' }); } break;
+    case 'cheers': showBubble(me, '🍻 짠!'); cheersAll(me); netSend('act', { a: 'cheers' }); break;
     case 'yum': showBubble(me, REACTIONS.yum); break;
     case 'refill': subMenu('refill', SELF_ITEMS.map((it) => [{ water: '💧', kimchi: '🌶️', danmuji: '🟡', lettuce: '🥬', ssamjang: '🫙', rice: '🍚' }[it.key] + ' ' + it.label, () => doAction('refill:' + it.key)])); break;
     case 'express': subMenu('express', [['😋 맛있다', () => showBubble(me, '😋 맛있다!')], ['🙏 맛있게 드세요', () => { showBubble(me, '🙏 맛있게 드세요'); state.people.filter((q) => !q.isMe && q.seated && !q.busy).slice(0, 2).forEach((q, k) => setTimeout(() => showBubble(q, ['감사합니다 😊', '같이 맛있게 먹어요!'][k]), 700 + k * 500)); }], ['🙇 잘 먹었습니다', () => doAction('done')]]); break;
@@ -4605,7 +4609,7 @@ function doAction(act) {
       if (!cands.length) { go(); break; }
       subMenu('walk', [['🚶 혼자', go], ['🤝 함께', () => startBuddyPick()]]); break;
     }
-    case 'hello': showBubble(me, '👋 안녕하세요'); break;
+    case 'hello': showBubble(me, '👋 안녕하세요'); netSend('act', { a: 'hello' }); break;
     case 'hug': if (!hugCat(me)) toast('냥이가 쏙 도망갔어요 🐾'); break;
     case 'putdown': { const nm = me.holdingCat ? me.holdingCat.d.name : '냥이'; releaseCat(me); showBubble(me, `${nm}야 잘 놀아~ 👋`); break; }
     case 'pet': petCat(me); break;
@@ -4698,7 +4702,7 @@ function frame() {
   (W.fanBlades || []).forEach((f, i) => { if (!W.fans[i].visible) return; f.blades.rotation.z -= dt * 18; f.head.rotation.y = Math.sin(t * 0.4 + i) * 0.7; });
   (W.lanterns || []).forEach((l, i) => { l.rotation.z = Math.sin(t * 1.3 + i) * 0.06 * wind; l.rotation.x = Math.cos(t * 1.1 + i) * 0.04 * wind; });
   if (W.cat) { W.cat.body.scale.y = 1 + Math.sin(t * 1.6) * 0.04; W.cat.tail.rotation.y = Math.sin(t * 0.8) * 0.3; }
-  updateTank(dt, t); updateDoor(dt); updateBuddy(dt, t); updateMeSwim(dt); updateShades(); updateSnowballs(dt); updateSnowFight(); updateKite(dt, t); { const can = chatMates().length > 0 && !look.intro, app = $('#app'); if (app.classList.contains('chatting') && !can) toggleChat(false); const fab = can && !app.classList.contains('chatting'); if ($('#chatFab').classList.contains('hidden') === fab || app.classList.contains('has-chat') !== can) { $('#chatFab').classList.toggle('hidden', !fab); app.classList.toggle('has-chat', can); dockFade(); placeAboveDock(); } } separatePeople();
+  updateTank(dt, t); updateDoor(dt); updateBuddy(dt, t); updateMeSwim(dt); updateShades(); if (NET.ready) { if (state.me && !state.me.entering && state.me.seated && NET.myG === null) netClaimSeat(); netTrack(); if (state.me && !state.me.entering && NET.myG !== null && (W.netT = (W.netT || 0) + dt) > 2) { W.netT = 0; placeRemotes(); } } updateSnowballs(dt); updateSnowFight(); updateKite(dt, t); { const can = chatMates().length > 0 && !look.intro, app = $('#app'); if (app.classList.contains('chatting') && !can) toggleChat(false); const fab = can && !app.classList.contains('chatting'); if ($('#chatFab').classList.contains('hidden') === fab || app.classList.contains('has-chat') !== can) { $('#chatFab').classList.toggle('hidden', !fab); app.classList.toggle('has-chat', can); dockFade(); placeAboveDock(); } } separatePeople();
   (W.ballRings || []).forEach((r, i) => { const k = 1 + Math.sin(t * 5 + i) * 0.12; r.scale.set(k, k, 1); r.material.opacity = 0.6 + Math.sin(t * 5 + i) * 0.3; });
   (W.pickRings || []).forEach((r, i) => { const k = 1 + Math.sin(t * 5 + i) * 0.12; r.scale.set(k, k, 1); r.material.opacity = 0.6 + Math.sin(t * 5 + i) * 0.3; });
 
@@ -4719,6 +4723,98 @@ function updateSteamAll(t) {
     p.steam.forEach(({ s, off }) => { const k = (t * 0.3 + off) % 1; s.position.copy(p.dish.position).add(new THREE.Vector3(Math.sin(t + off * 9) * 0.03, p.steamAt + k * 0.35, Math.cos(t * 0.7 + off * 5) * 0.02)); s.material.opacity = Math.sin(k * Math.PI) * 0.32; s.scale.setScalar(0.06 + k * 0.12); });
   });
 }
+
+/* =========================================================
+   실시간 함께 먹기 (Supabase Realtime: Presence + Broadcast)
+   - 식탁 하나에 6자리. 자리는 '전체 자리 번호'로 맞추고, 각자 화면에서는 내가 0번 자리에 보이도록 돌려서 놓는다
+   - 진짜 사람이 앉으면 그 자리의 가짜 손님은 자리를 비켜 준다
+   ========================================================= */
+const SUPA_URL = 'https://jmuuzlqrbftmwvwpkzsv.supabase.co', SUPA_KEY = 'sb_publishable_dzi1-aunOaLIuurr4qJAOw_qI2x8jTN';
+const NET = { id: (() => { try { let v = sessionStorage.getItem('hansang.id'); if (!v) { v = Math.random().toString(36).slice(2, 10); sessionStorage.setItem('hansang.id', v); } return v; } catch (e) { return Math.random().toString(36).slice(2, 10); } })(),
+  client: null, ch: null, table: 1, ready: false, myG: null, offset: 0, joinedAt: Date.now(), remotes: new Map(), reserved: new Set(), last: '', synced: false };
+const toLocal = (g) => (((g - NET.offset) % 6) + 6) % 6, toGlobal = (l) => (l + NET.offset) % 6;
+function netSend(event, payload) { if (!NET.ch || !NET.ready) return; try { NET.ch.send({ type: 'broadcast', event, payload: Object.assign({ id: NET.id }, payload) }); } catch (e) {} }
+function netConnect(table = 1) {
+  if (!window.supabase || !window.supabase.createClient) return false;
+  try {
+    if (!NET.client) NET.client = window.supabase.createClient(SUPA_URL, SUPA_KEY, { realtime: { params: { eventsPerSecond: 10 } } });
+    if (NET.ch) { try { NET.client.removeChannel(NET.ch); } catch (e) {} NET.remotes.forEach((r) => remoteGone(r.id, true)); }
+    NET.table = table; NET.synced = false; NET.ready = false;
+    const ch = NET.client.channel('hansang-table-' + table, { config: { presence: { key: NET.id }, broadcast: { self: false } } });
+    ch.on('presence', { event: 'sync' }, () => { NET.synced = true; onPresence(ch.presenceState()); })
+      .on('broadcast', { event: 'act' }, ({ payload }) => onRemoteAct(payload))
+      .on('broadcast', { event: 'chat' }, ({ payload }) => onRemoteChat(payload))
+      .subscribe((st) => { if (st === 'SUBSCRIBED') { NET.ready = true; netTrack(true); } });
+    NET.ch = ch; return true;
+  } catch (e) { console.warn('realtime off', e); return false; }
+}
+function myMeta() {
+  const me = state.me; if (!me || me.entering || !me.seated || NET.myG === null) return { id: NET.id, seated: false, joinedAt: NET.joinedAt };
+  return { id: NET.id, seated: true, g: toGlobal(me.seat), joinedAt: NET.joinedAt, name: me.name, gender: me.gender || state.draft.gender, top: state.draft.top, menu: String(me.menu).startsWith('custom') ? 'custom' : me.menu,
+    custom: String(me.menu).startsWith('custom') ? { spec: me.dishSpec, menu: MENUS[me.menu] } : null };
+}
+function netTrack(force) { if (!NET.ch || !NET.ready) return; const m = myMeta(), key = JSON.stringify([m.seated, m.g, m.menu]); if (!force && key === NET.last) return; NET.last = key; try { NET.ch.track(m); } catch (e) {} }
+// 내가 처음 앉을 때 전체 자리 번호를 고른다 (진짜 사람이 없는 가장 앞 번호)
+function netClaimSeat() {
+  if (!NET.ch) return; const taken = new Set([...NET.remotes.values()].filter((r) => r.meta.seated).map((r) => r.meta.g));
+  if (taken.size >= 6) { netConnect(NET.table + 1); setTimeout(netClaimSeat, 2500); return; }   // 꽉 찼으면 옆 식탁으로
+  let g = 0; while (taken.has(g)) g++; NET.myG = g; NET.offset = (g - (state.me ? state.me.seat || 0 : 0) + 6) % 6; NET.last = ''; netTrack(true); placeRemotes();
+}
+function onPresence(st) {
+  const seen = new Set();
+  Object.entries(st).forEach(([key, metas]) => { if (key === NET.id || !metas || !metas.length) return; const m = metas[metas.length - 1]; seen.add(key);
+    const r = NET.remotes.get(key) || { id: key, p: null, meta: {} }; r.meta = m; NET.remotes.set(key, r); });
+  [...NET.remotes.keys()].forEach((k) => { if (!seen.has(k)) remoteGone(k); });
+  // 같은 자리를 먼저 차지한 사람이 있으면 내가 옆으로 비켜 앉는다
+  if (NET.myG !== null) { const clash = [...NET.remotes.values()].find((r) => r.meta.seated && r.meta.g === NET.myG && (r.meta.joinedAt < NET.joinedAt || (r.meta.joinedAt === NET.joinedAt && r.id < NET.id)));
+    if (clash) { const taken = new Set([...NET.remotes.values()].filter((r) => r.meta.seated).map((r) => r.meta.g)); let g = 0; while (taken.has(g) && g < 6) g++; if (g < 6) { NET.myG = g; NET.offset = (g - state.me.seat + 6) % 6; NET.last = ''; netTrack(true); } } }
+  placeRemotes(); updateOnline();
+}
+function updateOnline() { const n = [...NET.remotes.values()].filter((r) => r.meta.seated).length, el = $('#onlineCnt'); if (!el) return; el.classList.toggle('hidden', !n || !state.me); el.textContent = `함께 ${n + 1}명`; }
+function placeRemotes() {
+  if (!state.me || state.me.entering || NET.myG === null) return;
+  NET.reserved = new Set([...NET.remotes.values()].filter((r) => r.meta.seated).map((r) => toLocal(r.meta.g)));
+  NET.remotes.forEach((r) => {
+    const want = r.meta.seated ? toLocal(r.meta.g) : null;
+    if (want === null) { if (r.p && !r.p.leaving) remoteAway(r); return; }
+    if (!r.p) { if (!r.arriving) remoteArrive(r, want); return; }
+    if (r.p.seat !== want && r.p.seated && !r.p.busy) { r.p.seat = want; sitAt(r.p, want); }
+  });
+}
+function remoteMenuKey(r) { const m = r.meta; if (m.menu !== 'custom' || !m.custom) return MENUS[m.menu] ? m.menu : 'ramen'; const k = 'custom_' + r.id; MENUS[k] = Object.assign({}, CUSTOM_MENU, m.custom.menu || {}); return k; }
+async function remoteArrive(r, i) {
+  r.arriving = true;
+  // 그 자리에 가짜 손님이 있으면 먼저 비켜 준다
+  const npc = state.people.find((q) => q.seat === i && !q.isMe && !q.remote);
+  if (npc && !npc.leaving) guestLeave(npc);
+  for (let k = 0; k < 40 && state.people.some((q) => q.seat === i && !q.isMe && !q.remote && q.seated); k++) await sleep(300);
+  if (!NET.remotes.has(r.id) || !r.meta.seated) { r.arriving = false; return; }
+  const m = r.meta, menu = remoteMenuKey(r);
+  const p = addPerson({ name: String(m.name || '손님').slice(0, 10), top: m.top || '#3d4a63', gender: m.gender === 'f' ? 'f' : 'm', menu, seat: i, remote: r.id, dishSpec: m.custom ? m.custom.spec : null });
+  r.p = p; p.root.position.set(BW.x + 0.25, bwY(BW.z1 - 0.3), BW.z1 - 0.3); p.root.rotation.y = Math.PI;
+  const tgt = toLocal(r.meta.g);
+  const pts = [DOOR_OUT.clone(), DOOR_IN.clone()].concat(avoidTables(DOOR_IN.clone(), route(DOOR_IN.clone(), seatPos(tgt, 1.65)))); pts.push(seatPos(tgt));
+  await walkPath(p, pts); r.arriving = false;
+  if (!NET.remotes.has(r.id)) return;
+  sitAt(p, toLocal(r.meta.g)); lifeLoop(p);
+  toast(`${p.name}님이 같은 식탁에 앉았어요 🟢`); setTimeout(() => showBubble(p, '👋 안녕하세요'), 800);
+}
+async function remoteAway(r) { const p = r.p; r.p = null; if (!p) return; p.remote = null; await guestLeave(p); }
+function remoteGone(id, silent) { const r = NET.remotes.get(id); NET.remotes.delete(id); if (r && r.p) { const p = r.p; r.p = null; if (!silent) guestLeave(p); else { scene.remove(p.root); clearTable(p); const i = state.people.indexOf(p); if (i >= 0) state.people.splice(i, 1); } } updateOnline(); }
+function onRemoteAct({ id, a }) {
+  const r = NET.remotes.get(id), p = r && r.p; if (!p || !p.seated || p.busy) return;
+  if (a === 'eat') { cancelAction(p); runAction(p, MENUS[p.menu].eat); }
+  else if (a === 'drink') { cancelAction(p); runAction(p, 'drink'); }
+  else if (a === 'cheers') { showBubble(p, '🍻 짠!'); cheersAll(p); }
+  else if (a === 'hello') showBubble(p, '👋 안녕하세요');
+}
+function onRemoteChat({ id, text }) {
+  const r = NET.remotes.get(id); const name = (r && r.p && r.p.name) || (r && r.meta.name) || '손님'; if (!text) return;
+  chatLog(name, String(text).slice(0, 60), false);
+  if (!$('#app').classList.contains('chatting')) { toast(`🗨️ ${name}: ${String(text).slice(0, 24)}`); $('#chatFab').classList.add('ping'); }
+}
+// 라이브러리가 늦게 불러와져도 연결되게
+(function waitSupa(n = 0) { if (netConnect()) return; if (n < 40) setTimeout(() => waitSupa(n + 1), 250); })();
 
 makeEnv();
 buildWorld(); buildObstacles(); navBuild();

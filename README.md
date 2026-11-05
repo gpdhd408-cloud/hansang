@@ -35,11 +35,19 @@ GitHub Pages: 저장소 **Settings → Pages**에서 브랜치 `main`, 폴더 `/
 
 ## 앞으로 할 일
 
-- [ ] 실시간 연결로 진짜 사람들과 같은 식탁에 앉기 (Supabase)
-- [ ] 채팅·동작을 서로 보기
+- [x] 실시간 연결로 진짜 사람들과 같은 식탁에 앉기 (Supabase Realtime Presence)
+- [x] 채팅·짠·한입·물·인사를 서로 보기 (Broadcast)
+- [ ] 해변 산책·물놀이·눈싸움을 서로 보기
 - [ ] 사진·글 분석 서버 함수 (Anthropic API 키는 서버에만 보관)
 - [ ] 채팅 필터, 신고·차단
 
+## 실시간 연결
+
+- Supabase Realtime의 Presence(누가 어느 자리에 앉았는지)와 Broadcast(채팅·동작)를 써요. 데이터베이스 표는 아직 쓰지 않아요.
+- 식탁 하나에 6자리. 자리는 전체 번호(0~5)로 맞추고, 각자 화면에서는 내가 정면 자리에 보이도록 돌려서 놓아요.
+- 진짜 사람이 앉으면 그 자리의 가짜 손님은 자리를 비켜 줘요. 6명이 꽉 차면 다음 식탁(`hansang-table-2`)으로 가요.
+- `index.html`에 들어 있는 키는 공개용(publishable) 키예요. 관리자용 secret 키는 절대 넣지 않아요.
+
 ## 기술
 
-three.js r128 · Web Audio API · 순수 HTML/CSS/JavaScript
+three.js r128 · Web Audio API · Supabase Realtime · 순수 HTML/CSS/JavaScript
