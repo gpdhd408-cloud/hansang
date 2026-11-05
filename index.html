@@ -26,6 +26,8 @@
   .chip { pointer-events: auto; display: inline-flex; align-items: center; gap: 10px; padding: 9px 16px; border-radius: 999px; background: var(--glass); color: #fff; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: 14px; border: 1px solid rgba(255,255,255,0.15); }
   .chip strong { font-family: 'Gowun Dodum', sans-serif; font-size: 16px; }
   .chip .dot { opacity: 0.5; }
+  #netDot { width: 9px; height: 9px; border-radius: 50%; background: #9aa0a8; flex: 0 0 9px; cursor: pointer; pointer-events: auto; }
+  #netDot.ok { background: #2ec27e; box-shadow: 0 0 6px #2ec27e; } #netDot.bad { background: #e5484d; }
   #onlineCnt { padding: 2px 9px; border-radius: 999px; background: rgba(46,160,100,0.85); font-size: 12px; }
   .icon-btn { width: 42px; height: 42px; padding: 0; justify-content: center; font-size: 19px; cursor: pointer; }
   .icon-btn[aria-expanded="true"] { background: rgba(20, 22, 34, 0.68); border-color: rgba(255,255,255,0.55); }
@@ -174,7 +176,7 @@
   <canvas id="view" aria-label="바닷가 노포 식탁 풍경. 끌어서 둘러볼 수 있어요"></canvas>
 
   <header id="topbar">
-    <div class="chip" id="meChip"><strong>한 상</strong><span class="dot">|</span><span id="status"></span><span class="dot">|</span><span id="meName"></span><span id="onlineCnt" class="hidden"></span></div>
+    <div class="chip" id="meChip"><strong>한 상</strong><span class="dot">|</span><span id="status"></span><span class="dot">|</span><span id="meName"></span><span id="onlineCnt" class="hidden"></span><span id="netDot" title="실시간 연결 확인 중"></span></div>
     <div class="right">
       <button class="chip icon-btn" id="shotBtn" aria-label="사진 찍기" title="사진 찍기"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.6-2.2h6.8L17 8h3v11H4z"/><circle cx="12" cy="13.2" r="3.6"/></svg></button>
       <button class="chip icon-btn" id="soundBtn" aria-expanded="false" aria-label="소리" title="소리"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" stroke="none"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/></svg></button>
@@ -4733,6 +4735,7 @@ const SUPA_URL = 'https://jmuuzlqrbftmwvwpkzsv.supabase.co', SUPA_KEY = 'sb_publ
 const NET = { id: (() => { try { let v = sessionStorage.getItem('hansang.id'); if (!v) { v = Math.random().toString(36).slice(2, 10); sessionStorage.setItem('hansang.id', v); } return v; } catch (e) { return Math.random().toString(36).slice(2, 10); } })(),
   client: null, ch: null, table: 1, ready: false, myG: null, offset: 0, joinedAt: Date.now(), remotes: new Map(), reserved: new Set(), last: '', synced: false };
 const toLocal = (g) => (((g - NET.offset) % 6) + 6) % 6, toGlobal = (l) => (l + NET.offset) % 6;
+function netStatus(kind, msg) { NET.status = msg; console.log('[한상 실시간]', msg); const d = $('#netDot'); if (!d) return; d.className = kind; d.title = msg; }
 function netSend(event, payload) { if (!NET.ch || !NET.ready) return; try { NET.ch.send({ type: 'broadcast', event, payload: Object.assign({ id: NET.id }, payload) }); } catch (e) {} }
 function netConnect(table = 1) {
   if (!window.supabase || !window.supabase.createClient) return false;
@@ -4744,9 +4747,14 @@ function netConnect(table = 1) {
     ch.on('presence', { event: 'sync' }, () => { NET.synced = true; onPresence(ch.presenceState()); })
       .on('broadcast', { event: 'act' }, ({ payload }) => onRemoteAct(payload))
       .on('broadcast', { event: 'chat' }, ({ payload }) => onRemoteChat(payload))
-      .subscribe((st) => { if (st === 'SUBSCRIBED') { NET.ready = true; netTrack(true); } });
+      .subscribe((st, err) => {
+        if (st === 'SUBSCRIBED') { NET.ready = true; netStatus('ok', `실시간 연결됨 (식탁 ${table})`); netTrack(true); }
+        else if (st === 'CHANNEL_ERROR') { NET.ready = false; netStatus('bad', '실시간 연결 오류: ' + ((err && err.message) || 'Supabase Realtime 설정을 확인해 주세요')); }
+        else if (st === 'TIMED_OUT') { NET.ready = false; netStatus('bad', '실시간 연결 시간 초과 (인터넷 또는 방화벽 확인)'); }
+        else if (st === 'CLOSED') { NET.ready = false; netStatus('bad', '실시간 연결이 닫혔어요'); } });
+    netStatus('', '실시간 연결하는 중…');
     NET.ch = ch; return true;
-  } catch (e) { console.warn('realtime off', e); return false; }
+  } catch (e) { netStatus('bad', '실시간 연결 실패: ' + e.message); return false; }
 }
 function myMeta() {
   const me = state.me; if (!me || me.entering || !me.seated || NET.myG === null) return { id: NET.id, seated: false, joinedAt: NET.joinedAt };
@@ -4814,7 +4822,8 @@ function onRemoteChat({ id, text }) {
   if (!$('#app').classList.contains('chatting')) { toast(`🗨️ ${name}: ${String(text).slice(0, 24)}`); $('#chatFab').classList.add('ping'); }
 }
 // 라이브러리가 늦게 불러와져도 연결되게
-(function waitSupa(n = 0) { if (netConnect()) return; if (n < 40) setTimeout(() => waitSupa(n + 1), 250); })();
+(function waitSupa(n = 0) { if (netConnect()) return; if (n < 60) setTimeout(() => waitSupa(n + 1), 250); else netStatus('bad', 'Supabase 라이브러리를 불러오지 못했어요 (인터넷 연결 확인)'); })();
+document.addEventListener('click', (e) => { if (e.target && e.target.id === 'netDot') toast(NET.status || '실시간 연결 확인 중'); });
 
 makeEnv();
 buildWorld(); buildObstacles(); navBuild();
