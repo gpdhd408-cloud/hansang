@@ -86,6 +86,7 @@
   .gender button.on { border-color: var(--accent); background: #fff1e8; box-shadow: 0 0 0 1px var(--accent); }
   .field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; text-align: left; font-size: 14px; color: var(--muted); min-width: 0; }
   .field > * { min-width: 0; }
+  .field small { font-size: 12px; opacity: 0.8; }
   .nickrow { display: flex; gap: 6px; width: 100%; min-width: 0; } .nickrow input { flex: 1 1 0; width: 0; min-width: 0; box-sizing: border-box; } .nickrow .dice { flex: 0 0 46px; }
   .dice { width: 46px; border-radius: 12px; border: 1px solid #d9cfbf; background: #fff; font-size: 20px; cursor: pointer; }
   .field input { padding: 12px 14px; border-radius: 12px; border: 1px solid #d9cfbf; font: inherit; font-size: 16px; color: var(--ink); background: #fff; }
@@ -232,7 +233,7 @@
       <div class="menus" id="menus"></div>
       <label class="photo hidden"><input type="file" accept="image/*" id="photo"><span id="photoLabel">📷 음식 사진으로 만들기 (선택)</span></label>
       <p class="hint hidden" id="photoStatus"></p>
-      <label class="field" id="dishField">내 음식<input id="dishText" type="text" maxlength="40" placeholder="메뉴에 없으면 적어 주세요 (예: 오므라이스, 마요 듬뿍)" autocomplete="off"></label>
+      <label class="field" id="dishField">내 음식 <small>· 대표 메뉴 하나만 적어 주세요</small><input id="dishText" type="text" maxlength="20" placeholder="예: 된장찌개, 오므라이스" autocomplete="off"></label>
       <img id="photoPreview" alt="올린 음식 사진" class="hidden">
       <button class="primary" id="sit" disabled>자리에 앉기</button>
     </section>
@@ -3372,8 +3373,9 @@ function makeKite() {
   const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(24 * 3), 3)); const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xf6f2ea, transparent: true, opacity: 0.85 })); line.frustumCulled = false; scene.add(line);
   return { g, tail, line };
 }
-function toggleKite() {
-  const me = state.me; if (me.kite) { scene.remove(me.kite.g); scene.remove(me.kite.line); me.kite = null; me.kiteOn = false; toast('연을 감아 내렸어요 🪁'); return; }
+function toggleKite(silent) {
+  const me = state.me; if (me.kite) { scene.remove(me.kite.g); scene.remove(me.kite.line); me.kite = null; me.kiteOn = false; if (!silent) toast('연을 감아 내렸어요 🪁'); document.querySelectorAll('#dock [data-act="kite"]').forEach((x) => x.classList.remove('on')); return; }
+  if (me.sparkler > 0) { me.sparkler = 0; if (SP.stop) { SP.stop(); SP.stop = null; } }   // 연과 불꽃은 같이 못 한다
   if (me.groundSit) standFromTowel(true);
   me.kite = makeKite(); me.kiteOn = true; me.kite.h = 0; toast('바람을 타고 연이 올라가요 🪁');
 }
@@ -4509,6 +4511,7 @@ function endTogether() {
   })();
 }
 function separatePeople() {
+  return;   // 사람끼리는(진짜 사람이든 가짜 손님이든) 서로 통과한다. 탁자·의자는 길찾기가 피해 간다
   const mov = [], fix = [];
   const add = (q, r = 0.21) => { if (!q || !q.root || !q.root.visible || !q.root.parent || q.remote || q.ghostT > 0) return; (q.seated || q.groundSit ? fix : mov).push([q, r]); };   // 진짜 사람끼리는 서로 통과한다
   state.people.forEach((q) => add(q)); (state.bg || []).forEach((q) => { if (q.root.visible) fix.push([q, 0.2]); }); (EX.list || []).forEach((q) => add(q));
@@ -4569,7 +4572,7 @@ function pickPerson(e) {
 const DOCKS = {
   seat: [['🥢', '한입', 'eat'], ['🥛', '물', 'drink'], ['🍻', '짠', 'cheers'], ['🧺', '리필 ▾', 'refill'], ['🌊', '산책', 'walk'], ['👀', '시각 ▾', 'sight']],
   stand: [['🍚', '식사', 'sitdown'], ['🧺', '리필 ▾', 'refill'], ['🌊', '산책', 'walk'], ['👋', '인사', 'hello']],
-  beach: [['🏖️', '타올', 'towel'], ['🏊', '물놀이 ▾', 'water'], ['🪁', '연날리기', 'kite'], ['🎆', '불꽃 ▾', 'fire'], ['🕶️', '패션 ▾', 'items'], '|', ['🍚', '식사', 'back', 'primary']],
+  beach: [['🏖️', '타올', 'towel'], ['🏊', '물놀이 ▾', 'water'], ['🪁', '연', 'kite'], ['🎆', '불꽃 ▾', 'fire'], ['🕶️', '패션 ▾', 'items'], '|', ['🍚', '식사', 'back', 'primary']],
   towel: [['🛌', '눕기', 'lie'], ['🧍', '서기', 'standup'], ['🎆', '불꽃 ▾', 'fire'], ['🕶️', '패션 ▾', 'items'], '|', ['🍚', '식사', 'back', 'primary']],
   swim: [['🏊', '자유형', 'sw_crawl'], ['🌤️', '배영', 'sw_back'], ['🏐', '비치볼', 'sw_ball'], ['🛟', '튜브', 'sw_tube'], ['🕶️', '패션 ▾', 'items'], '|', ['🏖️', '해변', 'outswim']],
 };
@@ -4660,10 +4663,10 @@ function doAction(act) {
     case 'hug': if (!hugCat(me)) toast('냥이가 쏙 도망갔어요 🐾'); break;
     case 'putdown': { const nm = me.holdingCat ? me.holdingCat.d.name : '냥이'; releaseCat(me); showBubble(me, `${nm}야 잘 놀아~ 👋`); break; }
     case 'pet': petCat(me); break;
-    case 'fw': { const now = performance.now(); if (now - (W.lastFw || 0) < 900) return; W.lastFw = now; launchFirework(); netSend('fw', {}); break; }
+    case 'fw': { const now = performance.now(); if (now - (W.lastFw || 0) < 900) return; W.lastFw = now; if (me.kite) toggleKite(true); launchFirework(); netSend('fw', {}); break; }
     case 'spark': {
       if (me.sparkler > 0) { me.sparkler = 0; if (SP.stop) { SP.stop(); SP.stop = null; } break; }
-      me.sparkler = 18; toast('손 폭죽에 불을 붙였어요 ✨ 해변을 걸어 보세요');
+      if (me.kite) toggleKite(true); me.sparkler = 18; toast('손불꽃에 불을 붙였어요 ✨ 해변을 걸어 보세요');
       if (Sound.ctx && !SP.stop) SP.stop = sparklerLoop(makePanner(me.root.position.x, 1, me.root.position.z, 0.8, Sound.bus.etc));
       break;
     }
