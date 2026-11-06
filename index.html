@@ -22,7 +22,9 @@
 
   /* 위쪽 */
   #topbar { position: absolute; top: 14px; left: 14px; right: 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; pointer-events: none; }
-  .right { display: flex; gap: 8px; }
+  .right { display: flex; gap: 8px; flex: 0 0 auto; }
+  #meChip { min-width: 0; flex: 0 1 auto; overflow: hidden; }
+  #meChip #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .chip { pointer-events: auto; display: inline-flex; align-items: center; gap: 10px; padding: 9px 16px; border-radius: 999px; background: var(--glass); color: #fff; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: 14px; border: 1px solid rgba(255,255,255,0.15); }
   .chip strong { font-family: 'Gowun Dodum', sans-serif; font-size: 16px; }
   .chip .dot { opacity: 0.5; }
@@ -164,7 +166,8 @@
     #app.chatting #dock { width: calc(100% - 24px); }
     #chatFab { bottom: 18px; right: 12px; width: 52px; height: 52px; }
     .chip { font-size: 12.5px; padding: 8px 12px; }
-    #meChip { white-space: nowrap; } #meChip #meName, #meChip span:nth-of-type(3) { display: none; }
+    #meChip { white-space: nowrap; gap: 6px; } #meChip #meName, #meChip span:nth-of-type(3) { display: none; }
+    .icon-btn { width: 38px; height: 38px; } .right { gap: 6px; } #onlineCnt { font-size: 11px; padding: 2px 7px; }
     #shotModal .screen { padding: 18px 16px; }
     .chip strong { font-size: 14px; }
     h1 { font-size: 44px; }
@@ -415,6 +418,12 @@ camera.rotation.order = 'YXZ';
 
 const lin = (hex) => new THREE.Color(hex).convertSRGBToLinear();
 function M(hex, r = 0.85, m = 0, extra = {}) { return new THREE.MeshStandardMaterial({ color: lin(hex), roughness: r, metalness: m, ...extra }); }
+// 아이폰 사파리는 캔버스 그라데이션에 알록달록한 잡티(디더링)를 넣어서, 부드러운 빛·구름은 픽셀을 직접 계산해 만든다
+function softTex(w, h, alphaAt) {
+  return canvasTex(w, h, (g) => { const im = g.createImageData(w, h), d = im.data;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4, a = Math.max(0, Math.min(1, alphaAt(x + 0.5, y + 0.5))); d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = Math.round(a * 255); }
+    g.putImageData(im, 0, 0); });
+}
 function canvasTex(w, h, draw, srgb = true) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c); t.anisotropy = 4; if (srgb) t.encoding = THREE.sRGBEncoding; return t;
@@ -433,7 +442,7 @@ function scrawl(g, text, x, y, size, color, seed = 1, align = 'left', font = '"N
   let cx = align === 'center' ? x - wid.reduce((a, b) => a + b, 0) / 2 : align === 'right' ? x - wid.reduce((a, b) => a + b, 0) : x;
   chars.forEach((ch, i) => { g.font = `${sz[i]}px ${font}`; g.save(); g.translate(cx, y + (rand(seed + i * 3.1) - 0.5) * size * 0.14); g.rotate((rand(seed + i * 7.3) - 0.5) * 0.18); g.fillText(ch, 0, 0); g.restore(); cx += wid[i]; });
 }
-const glowTex = canvasTex(128, 128, (g, w) => { const gr = g.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(255,255,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, w); });
+const glowTex = softTex(128, 128, (x, y) => { const r = Math.hypot(x - 64, y - 64) / 64; if (r >= 1) return 0; return r < 0.25 ? 1 - r / 0.25 * 0.45 : 0.55 * Math.pow(1 - (r - 0.25) / 0.75, 1.6); });
 const dotTex = canvasTex(32, 32, (g) => { g.fillStyle = '#fff'; g.beginPath(); g.arc(16, 16, 14, 0, 7); g.fill(); });
 function mesh(geo, material, parent, x = 0, y = 0, z = 0) { const m = new THREE.Mesh(geo, material); m.position.set(x, y, z); parent.add(m); return m; }
 const box = (w, h, d, mt, p, x, y, z) => mesh(new THREE.BoxGeometry(w, h, d), mt, p, x, y, z);
@@ -532,7 +541,8 @@ function buildWorld() {
   W.moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: moonTex, fog: false, transparent: true, depthWrite: false, toneMapped: false }));
   W.moon.scale.set(26, 26, 1); W.moon.position.set(60, 170, -560); scene.add(W.moon);
   // 구름
-  const cloudTex = canvasTex(256, 128, (g) => { [[70, 80, 40], [120, 64, 52], [170, 80, 40], [100, 90, 34], [150, 92, 36], [205, 92, 26], [45, 96, 24]].forEach(([x, y, r]) => { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(255,255,255,0.95)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }); });
+  const CB = [[70, 80, 40], [120, 64, 52], [170, 80, 40], [100, 90, 34], [150, 92, 36], [205, 92, 26], [45, 96, 24]];
+  const cloudTex = softTex(256, 128, (x, y) => { let keep = 1; for (const [cx, cy, r] of CB) { const q = Math.hypot(x - cx, y - cy) / r; if (q < 1) { keep *= 1 - 0.95 * (1 - q); } } return 1 - keep; });
   W.clouds = new THREE.Group(); W.cloudMats = [];
   for (let i = 0; i < 12; i++) {
     const m = new THREE.SpriteMaterial({ map: cloudTex, fog: false, transparent: true, depthWrite: false, toneMapped: false });
@@ -1737,7 +1747,7 @@ function applyScene() {
   const autumn = S.season === 'autumn' && S.w !== 'rain' && S.w !== 'snow';
   P.rain.visible = S.w === 'rain'; P.snow.visible = S.w === 'snow'; P.leaves.visible = autumn; P.petals.visible = S.season === 'spring' && S.w === 'clear';
   P.fireflies.visible = S.season === 'summer' && S.phase === 'night' && S.w === 'clear';
-  $('#status').textContent = `${SEASON_KO[S.season]} · ${timeLabel(S.h)} · ${WEATHER_KO[S.w]}`;
+  $('#status').textContent = innerWidth < 560 ? `${SEASON_KO[S.season]} · ${timeLabel(S.h)}` : `${SEASON_KO[S.season]} · ${timeLabel(S.h)} · ${WEATHER_KO[S.w]}`;   // 휴대폰은 날씨를 오른쪽 아이콘으로만
   if ($('#seasonIco')) { const k = S.w === 'clear' && S.phase === 'night' ? 'night' : S.w; if ($('#seasonIco').dataset.k !== k) { $('#seasonIco').dataset.k = k; $('#seasonIco').innerHTML = WX_ICON[k]; } }
   $('#hourVal').textContent = timeLabel(S.h); $('#hourRange').value = S.h; fillRange($('#hourRange')); if (window.markSeg) markSeg();
   updateAmbience();
@@ -3664,7 +3674,7 @@ function updateGulls(dt, t) {
     if (c.k >= 1) { scene.remove(c.m); GULLS.crackers.splice(i, 1); gullCry(c.g.p, 1); c.g.dip = 0.4; }
   }
   GULLS.callT -= dt;
-  if (GULLS.callT <= 0) { GULLS.callT = 3 + Math.random() * 6; const vis = GULLS.list.filter((g) => g.g.visible); if (vis.length) gullCry(vis[Math.floor(Math.random() * vis.length)].p); }
+  if (GULLS.callT <= 0) { GULLS.callT = 4 + Math.random() * 7.5; const vis = GULLS.list.filter((g) => g.g.visible); if (vis.length) gullCry(vis[Math.floor(Math.random() * vis.length)].p); }
   GULLS.list.forEach((g, i) => {
     g.g.visible = !night && !(S.w === 'rain' && i % 2);
     if (!g.g.visible) return;
@@ -4824,7 +4834,7 @@ function onPresence(st) {
     if (clash) { const taken = new Set([...NET.remotes.values()].filter((r) => r.meta.seated).map((r) => r.meta.g)); let g = 0; while (taken.has(g) && g < 6) g++; if (g < 6) { NET.myG = g; NET.offset = (g - state.me.seat + 6) % 6; NET.last = ''; netTrack(true); } } }
   placeRemotes(); updateOnline();
 }
-function updateOnline() { const n = [...NET.remotes.values()].filter((r) => r.meta.name).length, el = $('#onlineCnt'); if (!el) return; el.classList.toggle('hidden', !n || !state.me); el.textContent = `함께 ${n + 1}명`; }
+function updateOnline() { const n = [...NET.remotes.values()].filter((r) => r.meta.name).length, el = $('#onlineCnt'); if (!el) return; el.classList.toggle('hidden', !n || !state.me); el.textContent = innerWidth < 560 ? `👥 ${n + 1}` : `함께 ${n + 1}명`; }
 function placeRemotes() {
   if (!state.me || NET.myG === null) return;
   NET.reserved = new Set([...NET.remotes.values()].filter((r) => r.meta.g !== undefined && r.meta.name).map((r) => toLocal(r.meta.g)));
